@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import { generateBusinessRegistrationDoc, soThanhChuTien } from "./docGen";
 import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   UserPlus, TrendingUp, Wallet, Building2, AlertTriangle, Clock, Camera,
@@ -125,6 +126,9 @@ function orderFromRow(r) {
     overdueReason: r.overdue_reason || "", licensePdfData: r.license_pdf_url, licensePdfName: r.license_pdf_name,
     licenseSentAt: r.license_sent_at, confirmedAt: r.confirmed_at, revenue: r.revenue, cost: r.cost,
     laborFee: r.labor_fee, completedAt: r.completed_at, careSteps: r.care_steps || {},
+    companyName: r.company_name, capital: r.capital, ownerDob: r.owner_dob, ownerGender: r.owner_gender,
+    ownerEmail: r.owner_email, ownerProvince: r.owner_province || "Hà Tĩnh",
+    hqAddress: r.hq_address, hqWard: r.hq_ward, hqProvince: r.hq_province || "Hà Tĩnh",
   };
 }
 function expenseFromRow(r) {
@@ -593,10 +597,148 @@ function ConfirmDialog({ title, message, confirmLabel = "Xác nhận", danger, o
   );
 }
 
+function isoToDDMMYYYY(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// Form thu thập/điền lại thông tin còn thiếu rồi tự động điền vào mẫu
+// "Giấy đề nghị đăng ký doanh nghiệp — Công ty TNHH một thành viên" và tải về.
+function BusinessRegModal({ order, customer, onSave, onClose }) {
+  const [form, setForm] = useState({
+    hoTen: (customer?.name || "").toUpperCase(),
+    ngaySinh: order.ownerDob || "",
+    gioiTinh: order.ownerGender || "Nam",
+    soCccd: customer?.cccd || "",
+    dienThoai: customer?.phone || "",
+    email: order.ownerEmail || "",
+    diaChi1: customer?.address || "",
+    xaPhuong1: customer?.ward || "",
+    tinhTp1: order.ownerProvince || "Hà Tĩnh",
+    tenCongTy: order.companyName || "",
+    diaChi2: order.hqAddress || customer?.address || "",
+    xaPhuong2: order.hqWard || customer?.ward || "",
+    tinhTp2: order.hqProvince || "Hà Tĩnh",
+    vonDieuLe: order.capital ?? "",
+  });
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const vonBangChu = form.vonDieuLe ? soThanhChuTien(form.vonDieuLe) : "";
+
+  const submit = async () => {
+    if (!form.hoTen || !form.tenCongTy || !form.vonDieuLe) {
+      setError("Vui lòng điền đủ Họ tên, Tên công ty và Vốn điều lệ.");
+      return;
+    }
+    setError("");
+    setGenerating(true);
+    try {
+      const now = new Date();
+      const data = {
+        ho_ten: form.hoTen.toUpperCase(),
+        ngay_sinh: isoToDDMMYYYY(form.ngaySinh),
+        gioi_tinh: form.gioiTinh,
+        so_cccd: form.soCccd,
+        dia_chi_1: form.diaChi1,
+        xa_phuong_1: form.xaPhuong1,
+        tinh_tp_1: form.tinhTp1,
+        dien_thoai: form.dienThoai,
+        email: form.email,
+        ten_cong_ty: form.tenCongTy.toUpperCase(),
+        dia_chi_2: form.diaChi2,
+        xa_phuong_2: form.xaPhuong2,
+        tinh_tp_2: form.tinhTp2,
+        von_dieu_le: Number(form.vonDieuLe).toLocaleString("vi-VN"),
+        von_bang_chu: vonBangChu,
+        ngay_lap: String(now.getDate()).padStart(2, "0"),
+        thang_lap: String(now.getMonth() + 1).padStart(2, "0"),
+        nam_lap: String(now.getFullYear()),
+        tinh_lap: form.tinhTp2 || "Hà Tĩnh",
+      };
+      await generateBusinessRegistrationDoc(data, `GiayDeNghiDKDN_${order.orderCode}.docx`);
+      await onSave({
+        companyName: form.tenCongTy, capital: Number(form.vonDieuLe) || null,
+        ownerDob: form.ngaySinh || null, ownerGender: form.gioiTinh, ownerEmail: form.email,
+        ownerProvince: form.tinhTp1, hqAddress: form.diaChi2, hqWard: form.xaPhuong2, hqProvince: form.tinhTp2,
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || "Có lỗi khi tạo file.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-semibold text-slate-800 flex items-center gap-2"><FileText size={18} className="text-indigo-700" /> Tạo Giấy đề nghị đăng ký doanh nghiệp</p>
+          <button onClick={onClose}><XCircle size={18} className="text-slate-400" /></button>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Kiểm tra/bổ sung thông tin bên dưới — hệ thống sẽ tự động điền vào mẫu chính thức (Công ty TNHH một thành viên) và tải file Word về máy.</p>
+
+        <p className="text-xs font-semibold text-slate-600 mb-2">Chủ sở hữu / Người đại diện theo pháp luật</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <TextField label="Họ tên (viết hoa)" value={form.hoTen} onChange={set("hoTen")} className="sm:col-span-2" />
+          <TextField label="Ngày sinh" type="date" value={form.ngaySinh} onChange={set("ngaySinh")} />
+          <SelectField label="Giới tính" value={form.gioiTinh} onChange={set("gioiTinh")}>
+            <option value="Nam">Nam</option>
+            <option value="Nữ">Nữ</option>
+          </SelectField>
+          <TextField label="Số CCCD" value={form.soCccd} onChange={set("soCccd")} />
+          <TextField label="Điện thoại" value={form.dienThoai} onChange={set("dienThoai")} />
+          <TextField label="Email" value={form.email} onChange={set("email")} className="sm:col-span-2" />
+          <TextField label="Địa chỉ liên lạc (số nhà, đường...)" value={form.diaChi1} onChange={set("diaChi1")} className="sm:col-span-2" />
+          <TextField label="Xã/Phường" value={form.xaPhuong1} onChange={set("xaPhuong1")} />
+          <TextField label="Tỉnh/Thành phố" value={form.tinhTp1} onChange={set("tinhTp1")} />
+        </div>
+
+        <p className="text-xs font-semibold text-slate-600 mb-2">Thông tin công ty</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <TextField label="Tên công ty (tiếng Việt, viết hoa)" value={form.tenCongTy} onChange={set("tenCongTy")} className="sm:col-span-2" />
+          <TextField label="Địa chỉ trụ sở chính" value={form.diaChi2} onChange={set("diaChi2")} className="sm:col-span-2" />
+          <TextField label="Xã/Phường (trụ sở)" value={form.xaPhuong2} onChange={set("xaPhuong2")} />
+          <TextField label="Tỉnh/Thành phố (trụ sở)" value={form.tinhTp2} onChange={set("tinhTp2")} />
+          <TextField label="Vốn điều lệ (VNĐ)" type="number" value={form.vonDieuLe} onChange={set("vonDieuLe")} className="sm:col-span-2" />
+          {vonBangChu && <p className="text-xs text-slate-500 sm:col-span-2 -mt-2">Bằng chữ: <span className="italic">{vonBangChu}</span></p>}
+        </div>
+
+        {error && <p className="text-xs text-rose-600 mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <GhostButton onClick={onClose} disabled={generating}>Huỷ</GhostButton>
+          <PrimaryButton onClick={submit} disabled={generating}>
+            {generating ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Tạo &amp; tải file Word
+          </PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Nút mở form tạo hồ sơ — chỉ hiện với đơn "Mở Công ty"
+function BusinessRegDocButton({ order, customer, onSave, className = "" }) {
+  const [open, setOpen] = useState(false);
+  if (order.procedureType !== "mo_cty") return null;
+  return (
+    <>
+      <GhostButton className={`!py-1.5 !text-xs ${className}`} onClick={() => setOpen(true)}>
+        <FileText size={13} /> Tạo Giấy đề nghị ĐKDN
+      </GhostButton>
+      {open && <BusinessRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // NHÂN VIÊN — PHÂN HỆ 3: TRẠNG THÁI ĐƠN HÀNG
 // ---------------------------------------------------------------------------
-function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, onSendLicense, isNew }) {
+
+function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, onSendLicense, onSaveCompanyInfo, isNew }) {
   const [reason, setReason] = useState(order.overdueReason || "");
   const [confirmStep, setConfirmStep] = useState(null);
   const [stepMsg, setStepMsg] = useState("");
@@ -706,7 +848,10 @@ function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, o
           <p className="text-sm font-semibold text-slate-800">{order.orderCode} · {procedureLabel(order.procedureType)}</p>
           <p className="text-xs text-slate-500">{customer?.name || customer?.phone || "?"} · Tạo ngày {fmtDate(order.createdAt)}</p>
         </div>
-        <StatusBadge status={order.status} />
+        <div className="flex items-center gap-2">
+          <BusinessRegDocButton order={order} customer={customer} onSave={(fields) => onSaveCompanyInfo(order.id, fields)} />
+          <StatusBadge status={order.status} />
+        </div>
       </div>
 
       <OrderProgressStepper status={order.status} onStepClick={handleStepClick} />
@@ -801,7 +946,7 @@ function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, o
   );
 }
 
-function OrderStatusModule({ currentUser, orders, customers, highlightOrderId, onAdvance, onMarkRejected, onRetry, onSendLicense }) {
+function OrderStatusModule({ currentUser, orders, customers, highlightOrderId, onAdvance, onMarkRejected, onRetry, onSendLicense, onSaveCompanyInfo }) {
   const derived = useDerivedOrders(orders);
   const mine = derived.filter((o) => o.employeeId === currentUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const overdueCount = mine.filter((o) => o.approvalOverdue).length;
@@ -827,6 +972,7 @@ function OrderStatusModule({ currentUser, orders, customers, highlightOrderId, o
               onMarkRejected={onMarkRejected}
               onRetry={onRetry}
               onSendLicense={onSendLicense}
+              onSaveCompanyInfo={onSaveCompanyInfo}
               isNew={o.id === highlightOrderId}
             />
           ))}
@@ -960,7 +1106,7 @@ function ApprovalForm({ order, onSave }) {
   );
 }
 
-function AdminOrderModule({ orders, customers, employees, onConfirmOrder, onSaveFinance }) {
+function AdminOrderModule({ orders, customers, employees, onConfirmOrder, onSaveFinance, onSaveCompanyInfo }) {
   const derived = useDerivedOrders(orders);
   const sorted = [...derived].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const [confirmingId, setConfirmingId] = useState(null);
@@ -986,7 +1132,10 @@ function AdminOrderModule({ orders, customers, employees, onConfirmOrder, onSave
                     <p className="text-sm font-semibold text-slate-800">{o.orderCode} · {procedureLabel(o.procedureType)}</p>
                     <p className="text-xs text-slate-500">{cust?.name || cust?.phone} · NV: {emp?.name} · Tạo {fmtDate(o.createdAt)}</p>
                   </div>
-                  <StatusBadge status={o.status} />
+                  <div className="flex items-center gap-2">
+                    <BusinessRegDocButton order={o} customer={cust} onSave={(fields) => onSaveCompanyInfo(o.id, fields)} />
+                    <StatusBadge status={o.status} />
+                  </div>
                 </div>
 
                 {o.paymentOverdue && (
@@ -1421,6 +1570,16 @@ export default function App() {
     setToast("Đã ghi nhận thanh toán.");
   };
 
+  const saveCompanyInfo = async (orderId, fields) => {
+    const { error } = await supabase.from("orders").update({
+      company_name: fields.companyName, capital: fields.capital, owner_dob: fields.ownerDob,
+      owner_gender: fields.ownerGender, owner_email: fields.ownerEmail, owner_province: fields.ownerProvince,
+      hq_address: fields.hqAddress, hq_ward: fields.hqWard, hq_province: fields.hqProvince,
+    }).eq("id", orderId);
+    if (error) { setToast("Lưu file thành công nhưng lỗi khi lưu thông tin: " + error.message); return; }
+    await refreshAll();
+  };
+
   const addExpense = async (exp) => {
     const { error } = await supabase.from("expenses").insert({
       date: exp.date, description: exp.description, amount: exp.amount,
@@ -1511,13 +1670,14 @@ export default function App() {
           <OrderStatusModule
             currentUser={currentUser} orders={orders} customers={customers} highlightOrderId={highlightOrderId}
             onAdvance={advanceOrder} onMarkRejected={markRejected} onRetry={retryOrder} onSendLicense={sendLicense}
+            onSaveCompanyInfo={saveCompanyInfo}
           />
         )}
         {!isAdmin && tab === "bao_cao_nv" && <EmployeeReportModule currentUser={currentUser} orders={orders} />}
 
         {isAdmin && tab === "kh_admin" && <AdminCustomerModule customers={customers} employees={employees} />}
         {isAdmin && tab === "don_admin" && (
-          <AdminOrderModule orders={orders} customers={customers} employees={employees} onConfirmOrder={confirmOrder} onSaveFinance={saveFinance} />
+          <AdminOrderModule orders={orders} customers={customers} employees={employees} onConfirmOrder={confirmOrder} onSaveFinance={saveFinance} onSaveCompanyInfo={saveCompanyInfo} />
         )}
         {isAdmin && tab === "chi_phi" && <AdminExpenseModule expenses={expenses} onAddExpense={addExpense} />}
         {isAdmin && tab === "bao_cao_admin" && <AdminReportModule orders={orders} expenses={expenses} />}
