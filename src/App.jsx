@@ -683,6 +683,36 @@ function ConfirmDialog({ title, message, confirmLabel = "Xác nhận", danger, o
   );
 }
 
+// Danh sách nhân sự công ty được uỷ quyền nộp hồ sơ HKD thay khách hàng —
+// mỗi người ứng với 1 tài khoản nhân viên. Khi tạo Giấy uỷ quyền, hệ thống tự
+// chọn đúng người theo tên tài khoản đang đăng nhập (có thể đổi lại thủ công).
+const UY_QUYEN_PROFILES = [
+  {
+    hoTen: "TRẦN VIỆT HƯNG", gioiTinh: "Nam", ngaySinh: "14/04/1990",
+    cccd: "008090011162", diaChi: "Số 175 Phố Huế, Phường Hai Bà Trưng, Thành phố Hà Nội",
+    dienThoai: "0911799111", email: "hungviettq@gmail.com",
+  },
+  {
+    hoTen: "NGUYỄN MINH ĐỨC", gioiTinh: "Nam", ngaySinh: "09/09/1999",
+    cccd: "001099011128", diaChi: "136 Hàng Cỏ, Phường Cửa Nam, Hà Nội",
+    dienThoai: "0966448150", email: "ngminhduc59@gmail.com",
+  },
+  {
+    hoTen: "NGUYỄN MINH TUỆ", gioiTinh: "Nam", ngaySinh: "22/03/2001",
+    cccd: "008201003889", diaChi: "Số 175 Phố Huế, Phường Hai Bà Trưng, Thành phố Hà Nội",
+    dienThoai: "0394379676", email: "",
+  },
+];
+
+function stripDiacriticsUQ(str) {
+  return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().trim();
+}
+
+function findUyQuyenProfile(name) {
+  const target = stripDiacriticsUQ(name);
+  return UY_QUYEN_PROFILES.find((p) => stripDiacriticsUQ(p.hoTen) === target) || null;
+}
+
 function isoToDDMMYYYY(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
@@ -831,7 +861,7 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
 // Nút mở form tạo hồ sơ — chỉ hiện với đơn "Mở Công ty"
 // Form thu thập/điền lại thông tin cho "Giấy đề nghị đăng ký Hộ kinh doanh +
 // Giấy uỷ quyền" (đơn "Mở HKD") và tải về.
-function HouseholdRegModal({ order, customer, onSave, onClose }) {
+function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
   const [form, setForm] = useState({
     hoTen: (customer?.name || "").toUpperCase(),
     ngaySinh: order.ownerDob || "",
@@ -849,9 +879,15 @@ function HouseholdRegModal({ order, customer, onSave, onClose }) {
     phuongCaNhan: customer?.ward || "",
     tinhTpCaNhan: order.ownerProvince || "Hà Tĩnh",
   });
+  const [uqIndex, setUqIndex] = useState(() => {
+    const matched = findUyQuyenProfile(currentUser?.name);
+    const idx = matched ? UY_QUYEN_PROFILES.indexOf(matched) : 0;
+    return idx >= 0 ? idx : 0;
+  });
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const uyQuyen = UY_QUYEN_PROFILES[uqIndex];
 
   const vonBangChu = form.vonKinhDoanh ? soThanhChuTien(form.vonKinhDoanh) : "";
 
@@ -893,6 +929,13 @@ function HouseholdRegModal({ order, customer, onSave, onClose }) {
         dia_chi_ca_nhan: form.diaChiCaNhan,
         phuong_ca_nhan: form.phuongCaNhan,
         tinh_tp_ca_nhan: form.tinhTpCaNhan || "Hà Tĩnh",
+        uq_ho_ten: uyQuyen.hoTen,
+        uq_gioi_tinh: uyQuyen.gioiTinh,
+        uq_ngay_sinh: uyQuyen.ngaySinh,
+        uq_cccd: uyQuyen.cccd,
+        uq_dia_chi: uyQuyen.diaChi,
+        uq_dien_thoai: uyQuyen.dienThoai,
+        uq_email: uyQuyen.email || "",
       };
       await generateHouseholdBusinessDoc(data, `GiayDeNghiHKD_${order.orderCode}.docx`);
       await onSave({
@@ -949,6 +992,14 @@ function HouseholdRegModal({ order, customer, onSave, onClose }) {
           <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.chiTietNganh} onChange={set("chiTietNganh")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
         </div>
 
+        <p className="text-xs font-semibold text-slate-600 mb-2">Người nhận uỷ quyền (nhân sự công ty nộp hồ sơ)</p>
+        <div className="mb-4">
+          <SelectField label="Chọn người nhận uỷ quyền" value={uqIndex} onChange={(e) => setUqIndex(Number(e.target.value))}>
+            {UY_QUYEN_PROFILES.map((p, i) => <option key={p.cccd} value={i}>{p.hoTen}</option>)}
+          </SelectField>
+          <p className="text-[11px] text-slate-400 mt-1">Tự động chọn theo tài khoản đang đăng nhập — có thể đổi lại nếu người khác đứng ra nộp hồ sơ.</p>
+        </div>
+
         {error && <p className="text-xs text-rose-600 mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
 
         <div className="flex justify-end gap-2">
@@ -964,7 +1015,7 @@ function HouseholdRegModal({ order, customer, onSave, onClose }) {
 
 // Nút mở form tạo hồ sơ — chọn đúng mẫu theo loại thủ tục ("Mở Công ty" hoặc
 // "Mở HKD"); không hiện với các loại thủ tục khác.
-function BusinessRegDocButton({ order, customer, onSave, className = "" }) {
+function BusinessRegDocButton({ order, customer, currentUser, onSave, className = "" }) {
   const [open, setOpen] = useState(false);
   if (order.procedureType !== "mo_cty" && order.procedureType !== "mo_hkd") return null;
   const label = order.procedureType === "mo_cty" ? "Tạo Giấy đề nghị ĐKDN" : "Tạo Giấy đề nghị ĐKHKD";
@@ -977,7 +1028,7 @@ function BusinessRegDocButton({ order, customer, onSave, className = "" }) {
         <BusinessRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />
       )}
       {open && order.procedureType === "mo_hkd" && (
-        <HouseholdRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />
+        <HouseholdRegModal order={order} customer={customer} currentUser={currentUser} onSave={onSave} onClose={() => setOpen(false)} />
       )}
     </>
   );
@@ -987,7 +1038,7 @@ function BusinessRegDocButton({ order, customer, onSave, className = "" }) {
 // NHÂN VIÊN — PHÂN HỆ 3: TRẠNG THÁI ĐƠN HÀNG
 // ---------------------------------------------------------------------------
 
-function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, onSendLicense, onSaveCompanyInfo, isNew }) {
+function OrderStatusRow({ order, customer, currentUser, onAdvance, onMarkRejected, onRetry, onSendLicense, onSaveCompanyInfo, isNew }) {
   const [reason, setReason] = useState(order.overdueReason || "");
   const [confirmStep, setConfirmStep] = useState(null);
   const [stepMsg, setStepMsg] = useState("");
@@ -1098,7 +1149,7 @@ function OrderStatusRow({ order, customer, onAdvance, onMarkRejected, onRetry, o
           <p className="text-xs text-slate-500">{customer?.name || customer?.phone || "?"} · Tạo ngày {fmtDate(order.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2">
-          <BusinessRegDocButton order={order} customer={customer} onSave={(fields) => onSaveCompanyInfo(order.id, fields)} />
+          <BusinessRegDocButton order={order} customer={customer} currentUser={currentUser} onSave={(fields) => onSaveCompanyInfo(order.id, fields)} />
           <StatusBadge status={order.status} />
         </div>
       </div>
@@ -1217,6 +1268,7 @@ function OrderStatusModule({ currentUser, orders, customers, highlightOrderId, o
               key={o.id}
               order={o}
               customer={customers.find((c) => c.id === o.customerId)}
+              currentUser={currentUser}
               onAdvance={onAdvance}
               onMarkRejected={onMarkRejected}
               onRetry={onRetry}
@@ -1355,7 +1407,7 @@ function ApprovalForm({ order, onSave }) {
   );
 }
 
-function AdminOrderModule({ orders, customers, employees, onConfirmOrder, onSaveFinance, onSaveCompanyInfo }) {
+function AdminOrderModule({ orders, customers, employees, currentUser, onConfirmOrder, onSaveFinance, onSaveCompanyInfo }) {
   const derived = useDerivedOrders(orders);
   const sorted = [...derived].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const [confirmingId, setConfirmingId] = useState(null);
@@ -1382,7 +1434,7 @@ function AdminOrderModule({ orders, customers, employees, onConfirmOrder, onSave
                     <p className="text-xs text-slate-500">{cust?.name || cust?.phone} · NV: {emp?.name} · Tạo {fmtDate(o.createdAt)}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <BusinessRegDocButton order={o} customer={cust} onSave={(fields) => onSaveCompanyInfo(o.id, fields)} />
+                    <BusinessRegDocButton order={o} customer={cust} currentUser={currentUser} onSave={(fields) => onSaveCompanyInfo(o.id, fields)} />
                     <StatusBadge status={o.status} />
                   </div>
                 </div>
@@ -1927,7 +1979,7 @@ export default function App() {
 
         {isAdmin && tab === "kh_admin" && <AdminCustomerModule customers={customers} employees={employees} />}
         {isAdmin && tab === "don_admin" && (
-          <AdminOrderModule orders={orders} customers={customers} employees={employees} onConfirmOrder={confirmOrder} onSaveFinance={saveFinance} onSaveCompanyInfo={saveCompanyInfo} />
+          <AdminOrderModule orders={orders} customers={customers} employees={employees} currentUser={currentUser} onConfirmOrder={confirmOrder} onSaveFinance={saveFinance} onSaveCompanyInfo={saveCompanyInfo} />
         )}
         {isAdmin && tab === "chi_phi" && <AdminExpenseModule expenses={expenses} onAddExpense={addExpense} />}
         {isAdmin && tab === "bao_cao_admin" && <AdminReportModule orders={orders} expenses={expenses} />}
