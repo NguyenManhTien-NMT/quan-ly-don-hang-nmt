@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { generateBusinessRegistrationDoc, soThanhChuTien } from "./docGen";
+import { generateBusinessRegistrationDoc, generateHouseholdBusinessDoc, soThanhChuTien } from "./docGen";
 import NGANH_NGHE_CAP4 from "./nganhNgheData";
 import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
@@ -130,6 +130,7 @@ function orderFromRow(r) {
     companyName: r.company_name, capital: r.capital, ownerDob: r.owner_dob, ownerGender: r.owner_gender,
     ownerEmail: r.owner_email, ownerProvince: r.owner_province || "Hà Tĩnh",
     hqAddress: r.hq_address, hqWard: r.hq_ward, hqProvince: r.hq_province || "Hà Tĩnh",
+    industryName: r.industry_name || "", industryDetail: r.industry_detail || "",
   };
 }
 function expenseFromRow(r) {
@@ -706,12 +707,20 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
     xaPhuong2: order.hqWard || customer?.ward || "",
     tinhTp2: order.hqProvince || "Hà Tĩnh",
     vonDieuLe: order.capital ?? "",
+    nganhNghe: order.industryName || customer?.industry || "",
+    chiTietNganh: order.industryDetail || "",
   });
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const vonBangChu = form.vonDieuLe ? soThanhChuTien(form.vonDieuLe) : "";
+
+  const parseIndustry = (val) => {
+    const m = (val || "").trim().match(/^(\d{3,5})\s*-\s*(.+)$/);
+    if (m) return { code: m[1], name: m[2].trim() };
+    return { code: "", name: (val || "").trim() };
+  };
 
   const submit = async () => {
     if (!form.hoTen || !form.tenCongTy || !form.vonDieuLe) {
@@ -722,6 +731,10 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
     setGenerating(true);
     try {
       const now = new Date();
+      const { code: maNganh, name: tenNganhGoc } = parseIndustry(form.nganhNghe);
+      const tenNganhHienThi = form.chiTietNganh.trim()
+        ? `${tenNganhGoc}\nChi tiết: ${form.chiTietNganh.trim()}`
+        : tenNganhGoc;
       const data = {
         ho_ten: form.hoTen.toUpperCase(),
         ngay_sinh: isoToDDMMYYYY(form.ngaySinh),
@@ -742,12 +755,16 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
         thang_lap: String(now.getMonth() + 1).padStart(2, "0"),
         nam_lap: String(now.getFullYear()),
         tinh_lap: form.tinhTp2 || "Hà Tĩnh",
+        ten_nganh: tenNganhHienThi,
+        ma_nganh: maNganh,
+        nganh_chinh: "X",
       };
       await generateBusinessRegistrationDoc(data, `GiayDeNghiDKDN_${order.orderCode}.docx`);
       await onSave({
         companyName: form.tenCongTy, capital: Number(form.vonDieuLe) || null,
         ownerDob: form.ngaySinh || null, ownerGender: form.gioiTinh, ownerEmail: form.email,
         ownerProvince: form.tinhTp1, hqAddress: form.diaChi2, hqWard: form.xaPhuong2, hqProvince: form.tinhTp2,
+        industryName: form.nganhNghe, industryDetail: form.chiTietNganh,
       });
       onClose();
     } catch (err) {
@@ -792,6 +809,12 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
           {vonBangChu && <p className="text-xs text-slate-500 sm:col-span-2 -mt-2">Bằng chữ: <span className="italic">{vonBangChu}</span></p>}
         </div>
 
+        <p className="text-xs font-semibold text-slate-600 mb-2">Ngành, nghề kinh doanh</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <IndustryField label="Ngành nghề kinh doanh (mã cấp 4)" value={form.nganhNghe} onChange={(v) => setForm((f) => ({ ...f, nganhNghe: v }))} className="sm:col-span-2" />
+          <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.chiTietNganh} onChange={set("chiTietNganh")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
+        </div>
+
         {error && <p className="text-xs text-rose-600 mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
 
         <div className="flex justify-end gap-2">
@@ -806,15 +829,156 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
 }
 
 // Nút mở form tạo hồ sơ — chỉ hiện với đơn "Mở Công ty"
+// Form thu thập/điền lại thông tin cho "Giấy đề nghị đăng ký Hộ kinh doanh +
+// Giấy uỷ quyền" (đơn "Mở HKD") và tải về.
+function HouseholdRegModal({ order, customer, onSave, onClose }) {
+  const [form, setForm] = useState({
+    hoTen: (customer?.name || "").toUpperCase(),
+    ngaySinh: order.ownerDob || "",
+    gioiTinh: order.ownerGender || "Nam",
+    soCccd: customer?.cccd || "",
+    dienThoai: customer?.phone || "",
+    tenHoKd: order.companyName || "",
+    diaChiTruSo: order.hqAddress || customer?.address || "",
+    phuong: order.hqWard || customer?.ward || "",
+    tinhTp: order.hqProvince || "Hà Tĩnh",
+    nganhNghe: order.industryName || customer?.industry || "",
+    chiTietNganh: order.industryDetail || "",
+    vonKinhDoanh: order.capital ?? "",
+    diaChiCaNhan: customer?.address || "",
+    phuongCaNhan: customer?.ward || "",
+    tinhTpCaNhan: order.ownerProvince || "Hà Tĩnh",
+  });
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const vonBangChu = form.vonKinhDoanh ? soThanhChuTien(form.vonKinhDoanh) : "";
+
+  const parseIndustry = (val) => {
+    const m = (val || "").trim().match(/^(\d{3,5})\s*-\s*(.+)$/);
+    if (m) return { code: m[1], name: m[2].trim() };
+    return { code: "", name: (val || "").trim() };
+  };
+
+  const submit = async () => {
+    if (!form.hoTen || !form.tenHoKd || !form.vonKinhDoanh) {
+      setError("Vui lòng điền đủ Họ tên, Tên hộ kinh doanh và Vốn kinh doanh.");
+      return;
+    }
+    setError("");
+    setGenerating(true);
+    try {
+      const now = new Date();
+      const { code: maNganh, name: tenNganh } = parseIndustry(form.nganhNghe);
+      const data = {
+        ngay_lap: String(now.getDate()).padStart(2, "0"),
+        thang_lap: String(now.getMonth() + 1).padStart(2, "0"),
+        nam_lap: String(now.getFullYear()),
+        tinh_tp: form.tinhTp || "Hà Tĩnh",
+        phuong: form.phuong,
+        ho_ten: form.hoTen.toUpperCase(),
+        ngay_sinh_ngay: form.ngaySinh ? String(new Date(form.ngaySinh).getDate()).padStart(2, "0") : "",
+        ngay_sinh_thang: form.ngaySinh ? String(new Date(form.ngaySinh).getMonth() + 1).padStart(2, "0") : "",
+        ngay_sinh_nam: form.ngaySinh ? String(new Date(form.ngaySinh).getFullYear()) : "",
+        gioi_tinh: form.gioiTinh,
+        so_cccd: form.soCccd,
+        dien_thoai: form.dienThoai,
+        ten_ho_kd: form.tenHoKd.toUpperCase(),
+        dia_chi_tru_so: form.diaChiTruSo,
+        ten_nganh: form.chiTietNganh.trim() ? `${tenNganh}\nChi tiết: ${form.chiTietNganh.trim()}` : tenNganh,
+        ma_nganh: maNganh,
+        von_kinh_doanh: Number(form.vonKinhDoanh).toLocaleString("vi-VN"),
+        von_bang_chu: vonBangChu,
+        dia_chi_ca_nhan: form.diaChiCaNhan,
+        phuong_ca_nhan: form.phuongCaNhan,
+        tinh_tp_ca_nhan: form.tinhTpCaNhan || "Hà Tĩnh",
+      };
+      await generateHouseholdBusinessDoc(data, `GiayDeNghiHKD_${order.orderCode}.docx`);
+      await onSave({
+        companyName: form.tenHoKd, capital: Number(form.vonKinhDoanh) || null,
+        ownerDob: form.ngaySinh || null, ownerGender: form.gioiTinh, ownerEmail: order.ownerEmail,
+        ownerProvince: form.tinhTpCaNhan, hqAddress: form.diaChiTruSo, hqWard: form.phuong, hqProvince: form.tinhTp,
+        industryName: form.nganhNghe, industryDetail: form.chiTietNganh,
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || "Có lỗi khi tạo file.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-semibold text-slate-800 flex items-center gap-2"><FileText size={18} className="text-indigo-700" /> Tạo Giấy đề nghị đăng ký HKD + Giấy uỷ quyền</p>
+          <button onClick={onClose}><XCircle size={18} className="text-slate-400" /></button>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Kiểm tra/bổ sung thông tin bên dưới — hệ thống sẽ tự động điền vào cả 2 mẫu (Giấy đề nghị đăng ký Hộ kinh doanh + Giấy uỷ quyền) và tải file Word về máy. Phần "Bên nhận uỷ quyền" đã cố định sẵn theo nhân sự công ty.</p>
+
+        <p className="text-xs font-semibold text-slate-600 mb-2">Chủ hộ kinh doanh</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <TextField label="Họ tên (viết hoa)" value={form.hoTen} onChange={set("hoTen")} className="sm:col-span-2" />
+          <TextField label="Ngày sinh" type="date" value={form.ngaySinh} onChange={set("ngaySinh")} />
+          <SelectField label="Giới tính" value={form.gioiTinh} onChange={set("gioiTinh")}>
+            <option value="Nam">Nam</option>
+            <option value="Nữ">Nữ</option>
+          </SelectField>
+          <TextField label="Số CCCD" value={form.soCccd} onChange={set("soCccd")} />
+          <TextField label="Điện thoại" value={form.dienThoai} onChange={set("dienThoai")} />
+          <TextField label="Địa chỉ liên lạc cá nhân (số nhà, đường...)" value={form.diaChiCaNhan} onChange={set("diaChiCaNhan")} className="sm:col-span-2" />
+          <TextField label="Xã/Phường (cá nhân)" value={form.phuongCaNhan} onChange={set("phuongCaNhan")} />
+          <TextField label="Tỉnh/Thành phố (cá nhân)" value={form.tinhTpCaNhan} onChange={set("tinhTpCaNhan")} />
+        </div>
+
+        <p className="text-xs font-semibold text-slate-600 mb-2">Hộ kinh doanh</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <TextField label="Tên hộ kinh doanh (không cần ghi 'HỘ KINH DOANH')" value={form.tenHoKd} onChange={set("tenHoKd")} className="sm:col-span-2" />
+          <TextField label="Địa chỉ trụ sở" value={form.diaChiTruSo} onChange={set("diaChiTruSo")} className="sm:col-span-2" />
+          <TextField label="Xã/Phường (trụ sở, nơi đăng ký)" value={form.phuong} onChange={set("phuong")} />
+          <TextField label="Tỉnh/Thành phố (trụ sở)" value={form.tinhTp} onChange={set("tinhTp")} />
+          <TextField label="Vốn kinh doanh (VNĐ)" type="number" value={form.vonKinhDoanh} onChange={set("vonKinhDoanh")} className="sm:col-span-2" />
+          {vonBangChu && <p className="text-xs text-slate-500 sm:col-span-2 -mt-2">Bằng chữ: <span className="italic">{vonBangChu}</span></p>}
+        </div>
+
+        <p className="text-xs font-semibold text-slate-600 mb-2">Ngành, nghề kinh doanh</p>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <IndustryField label="Ngành nghề kinh doanh (mã cấp 4)" value={form.nganhNghe} onChange={(v) => setForm((f) => ({ ...f, nganhNghe: v }))} className="sm:col-span-2" />
+          <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.chiTietNganh} onChange={set("chiTietNganh")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
+        </div>
+
+        {error && <p className="text-xs text-rose-600 mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <GhostButton onClick={onClose} disabled={generating}>Huỷ</GhostButton>
+          <PrimaryButton onClick={submit} disabled={generating}>
+            {generating ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Tạo &amp; tải file Word
+          </PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Nút mở form tạo hồ sơ — chọn đúng mẫu theo loại thủ tục ("Mở Công ty" hoặc
+// "Mở HKD"); không hiện với các loại thủ tục khác.
 function BusinessRegDocButton({ order, customer, onSave, className = "" }) {
   const [open, setOpen] = useState(false);
-  if (order.procedureType !== "mo_cty") return null;
+  if (order.procedureType !== "mo_cty" && order.procedureType !== "mo_hkd") return null;
+  const label = order.procedureType === "mo_cty" ? "Tạo Giấy đề nghị ĐKDN" : "Tạo Giấy đề nghị ĐKHKD";
   return (
     <>
       <GhostButton className={`!py-1.5 !text-xs ${className}`} onClick={() => setOpen(true)}>
-        <FileText size={13} /> Tạo Giấy đề nghị ĐKDN
+        <FileText size={13} /> {label}
       </GhostButton>
-      {open && <BusinessRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />}
+      {open && order.procedureType === "mo_cty" && (
+        <BusinessRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />
+      )}
+      {open && order.procedureType === "mo_hkd" && (
+        <HouseholdRegModal order={order} customer={customer} onSave={onSave} onClose={() => setOpen(false)} />
+      )}
     </>
   );
 }
@@ -1660,6 +1824,7 @@ export default function App() {
       company_name: fields.companyName, capital: fields.capital, owner_dob: fields.ownerDob,
       owner_gender: fields.ownerGender, owner_email: fields.ownerEmail, owner_province: fields.ownerProvince,
       hq_address: fields.hqAddress, hq_ward: fields.hqWard, hq_province: fields.hqProvince,
+      industry_name: fields.industryName || null, industry_detail: fields.industryDetail || null,
     }).eq("id", orderId);
     if (error) { setToast("Lưu file thành công nhưng lỗi khi lưu thông tin: " + error.message); return; }
     await refreshAll();
