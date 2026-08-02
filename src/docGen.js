@@ -60,15 +60,11 @@ export function soThanhChuTien(n) {
 }
 
 // ---------------------------------------------------------------------------
-// Điền file mẫu "Giấy đề nghị đăng ký doanh nghiệp — Công ty TNHH 1 thành
-// viên" (public/templates/giay-de-nghi-tnhh-1tv.docx) và tải về máy.
-// data phải chứa đủ các khoá: ho_ten, ngay_sinh, gioi_tinh, so_cccd,
-// dia_chi_1, xa_phuong_1, tinh_tp_1, dien_thoai, email, ten_cong_ty,
-// dia_chi_2, xa_phuong_2, tinh_tp_2, von_dieu_le, von_bang_chu, ngay_lap,
-// thang_lap, nam_lap, tinh_lap
+// Hàm dùng chung: tải 1 file mẫu .docx từ public/templates/, điền dữ liệu và
+// tải kết quả về máy dưới đúng tên file mong muốn.
 // ---------------------------------------------------------------------------
-export async function generateBusinessRegistrationDoc(data, filename) {
-  const res = await fetch("/templates/giay-de-nghi-tnhh-1tv.docx");
+async function fillAndDownloadTemplate(templatePath, data, filename) {
+  const res = await fetch(templatePath);
   if (!res.ok) throw new Error("Không tải được file mẫu (kiểm tra lại public/templates/).");
   const arrayBuffer = await res.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
@@ -93,4 +89,29 @@ export async function generateBusinessRegistrationDoc(data, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Điền file mẫu "Giấy đề nghị đăng ký doanh nghiệp — Công ty TNHH 1 thành
+// viên" (public/templates/giay-de-nghi-tnhh-1tv.docx) và tải về máy.
+// data phải chứa đủ các khoá: ho_ten, ngay_sinh, gioi_tinh, so_cccd,
+// dia_chi_1, xa_phuong_1, tinh_tp_1, dien_thoai, email, ten_cong_ty,
+// dia_chi_2, xa_phuong_2, tinh_tp_2, von_dieu_le, von_bang_chu, ngay_lap,
+// thang_lap, nam_lap, tinh_lap
+// ---------------------------------------------------------------------------
+export async function generateBusinessRegistrationDoc(data, filename) {
+  return fillAndDownloadTemplate("/templates/giay-de-nghi-tnhh-1tv.docx", data, filename);
+}
+
+// ---------------------------------------------------------------------------
+// Điền file mẫu "Giấy đề nghị đăng ký Hộ kinh doanh + Giấy uỷ quyền"
+// (public/templates/giay-de-nghi-hkd-uy-quyen.docx) và tải về máy.
+// Phần "Bên nhận uỷ quyền" (nhân sự công ty) đã cố định sẵn trong file mẫu.
+// data phải chứa đủ các khoá: ngay_lap, thang_lap, nam_lap, tinh_tp, phuong,
+// ho_ten, ngay_sinh_ngay, ngay_sinh_thang, ngay_sinh_nam, gioi_tinh, so_cccd,
+// dien_thoai, ten_ho_kd, dia_chi_tru_so, ten_nganh, ma_nganh, von_kinh_doanh,
+// von_bang_chu, dia_chi_ca_nhan, phuong_ca_nhan, tinh_tp_ca_nhan
+// ---------------------------------------------------------------------------
+export async function generateHouseholdBusinessDoc(data, filename) {
+  return fillAndDownloadTemplate("/templates/giay-de-nghi-hkd-uy-quyen.docx", data, filename);
 }
