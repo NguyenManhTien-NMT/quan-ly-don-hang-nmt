@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { generateBusinessRegistrationDoc, soThanhChuTien } from "./docGen";
+import NGANH_NGHE_CAP4 from "./nganhNgheData";
 import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   UserPlus, TrendingUp, Wallet, Building2, AlertTriangle, Clock, Camera,
@@ -234,6 +235,90 @@ function SelectField({ label, children, ...props }) {
     </label>
   );
 }
+
+// Bỏ dấu tiếng Việt để tìm kiếm không phân biệt có dấu/không dấu
+function stripDiacritics(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+// Ô "Ngành nghề kinh doanh" có gợi ý tự động: gõ mã ngành cấp 4 (VD 0111) hoặc
+// gõ tên/từ khoá ngành (có dấu hoặc không dấu đều được) sẽ hiện danh sách gợi ý.
+function IndustryField({ label, value, onChange, className = "" }) {
+  const [query, setQuery] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+
+  useEffect(() => setQuery(value || ""), [value]);
+
+  const suggestions = useMemo(() => {
+    const q = query.trim();
+    if (!q) return [];
+    const qNorm = stripDiacritics(q);
+    const byCode = q.replace(/\D/g, "").length >= 2 ? NGANH_NGHE_CAP4.filter((n) => n.code.startsWith(q.replace(/\D/g, ""))) : [];
+    const byName = NGANH_NGHE_CAP4.filter((n) => stripDiacritics(n.name).includes(qNorm));
+    const merged = [...byCode, ...byName.filter((n) => !byCode.includes(n))];
+    return merged.slice(0, 8);
+  }, [query]);
+
+  const pick = (item) => {
+    const text = `${item.code} - ${item.name}`;
+    setQuery(text);
+    onChange(text);
+    setOpen(false);
+  };
+
+  const handleInput = (e) => {
+    const v = e.target.value;
+    setQuery(v);
+    onChange(v);
+    setOpen(true);
+    setHighlight(0);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, suggestions.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(suggestions[highlight]); }
+    else if (e.key === "Escape") { setOpen(false); }
+  };
+
+  return (
+    <label className={`block relative ${className}`}>
+      {label && <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>}
+      <input
+        value={query}
+        onChange={handleInput}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={handleKeyDown}
+        placeholder="Gõ mã ngành cấp 4 (VD: 0111) hoặc tên ngành..."
+        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg max-h-64 overflow-y-auto">
+          {suggestions.map((item, i) => (
+            <button
+              type="button"
+              key={item.code}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(item)}
+              className={`w-full text-left px-3 py-2 text-sm flex items-start gap-2 ${i === highlight ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+            >
+              <span className="text-indigo-600 font-medium shrink-0">{item.code}</span>
+              <span className="text-slate-700">{item.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
 function Toast({ message, onClose }) {
   React.useEffect(() => {
     const t = setTimeout(onClose, 3000);
@@ -432,7 +517,7 @@ function CustomerFormCard({ onSubmit }) {
         <TextField label="Số điện thoại *" value={form.phone} onChange={set("phone")} placeholder="09xxxxxxxx" />
         <TextField label="Địa chỉ *" value={form.address} onChange={set("address")} placeholder="Số nhà, đường..." />
         <TextField label="Phường" value={form.ward} onChange={set("ward")} placeholder="Phường..." />
-        <TextField label="Ngành nghề kinh doanh" value={form.industry} onChange={set("industry")} className="sm:col-span-2" />
+        <IndustryField label="Ngành nghề kinh doanh" value={form.industry} onChange={(v) => setForm((f) => ({ ...f, industry: v }))} className="sm:col-span-2" />
         <TextField label="Người giới thiệu" value={form.referrer} onChange={set("referrer")} placeholder="Tên người giới thiệu khách hàng này (nếu có)" className="sm:col-span-2" />
       </div>
       <div className="mb-4">
