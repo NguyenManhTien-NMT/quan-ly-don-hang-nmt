@@ -115,7 +115,7 @@ const CHART_TOOLTIP_STYLE = {
 function customerFromRow(r) {
   return {
     id: r.id, name: r.name, cccd: r.cccd, phone: r.phone, address: r.address, ward: r.ward,
-    industry: r.industry, referrer: r.referrer, vnidPhoto: r.vnid_photo_url,
+    industries: Array.isArray(r.industries) ? r.industries : [], referrer: r.referrer, vnidPhoto: r.vnid_photo_url,
     employeeId: r.employee_id, createdAt: r.created_at,
   };
 }
@@ -130,7 +130,7 @@ function orderFromRow(r) {
     companyName: r.company_name, capital: r.capital, ownerDob: r.owner_dob, ownerGender: r.owner_gender,
     ownerEmail: r.owner_email, ownerProvince: r.owner_province || "Hà Tĩnh",
     hqAddress: r.hq_address, hqWard: r.hq_ward, hqProvince: r.hq_province || "Hà Tĩnh",
-    industryName: r.industry_name || "", industryDetail: r.industry_detail || "",
+    industries: Array.isArray(r.industries) ? r.industries : [],
   };
 }
 function expenseFromRow(r) {
@@ -320,6 +320,86 @@ function IndustryField({ label, value, onChange, className = "" }) {
   );
 }
 
+// Danh sách ngành, nghề kinh doanh — cho phép thêm nhiều ngành, mỗi ngành có ô
+// "Chi tiết ngành nghề" riêng, và đánh dấu đúng 1 ngành là "Ngành chính" (radio
+// chọn 1 trong nhiều), khớp đúng cấu trúc bảng trong hồ sơ đăng ký thật.
+function IndustryListEditor({ industries, onChange }) {
+  const [picker, setPicker] = useState("");
+
+  const addIndustry = (value) => {
+    const m = (value || "").trim().match(/^(\d{3,5})\s*-\s*(.+)$/);
+    if (!m) { setPicker(value); return; }
+    const code = m[1];
+    const name = m[2].trim();
+    if (industries.some((it) => it.code === code)) { setPicker(""); return; }
+    const next = [...industries, { code, name, detail: "", isPrimary: industries.length === 0 }];
+    onChange(next);
+    setPicker("");
+  };
+
+  const removeIndustry = (idx) => {
+    const removed = industries[idx];
+    let next = industries.filter((_, i) => i !== idx);
+    if (removed?.isPrimary && next.length > 0 && !next.some((it) => it.isPrimary)) {
+      next = next.map((it, i) => (i === 0 ? { ...it, isPrimary: true } : it));
+    }
+    onChange(next);
+  };
+
+  const setPrimary = (idx) => {
+    onChange(industries.map((it, i) => ({ ...it, isPrimary: i === idx })));
+  };
+
+  const setDetail = (idx, detail) => {
+    onChange(industries.map((it, i) => (i === idx ? { ...it, detail } : it)));
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden">
+      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+        <p className="text-sm font-semibold text-slate-800">Danh sách ngành nghề kinh doanh</p>
+        <p className="text-xs text-slate-400">{industries.length} ngành nghề đã thêm</p>
+      </div>
+
+      {industries.length > 0 && (
+        <div className="hidden sm:grid grid-cols-[80px_1fr_140px_70px] gap-3 px-4 py-2 text-xs font-medium text-slate-400 border-b border-slate-100">
+          <span>MÃ NGÀNH</span><span>TÊN NGÀNH, NGHỀ</span><span>NGÀNH CHÍNH</span><span></span>
+        </div>
+      )}
+
+      <div className="divide-y divide-slate-100">
+        {industries.map((it, idx) => (
+          <div key={idx} className="px-4 py-3">
+            <div className="grid sm:grid-cols-[80px_1fr_140px_70px] gap-3 items-start">
+              <span className="font-semibold text-teal-700 text-sm">{it.code || "—"}</span>
+              <span className="text-sm text-slate-700">{it.name}</span>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                <input type="radio" checked={it.isPrimary} onChange={() => setPrimary(idx)} className="accent-teal-700" />
+                {it.isPrimary ? "Ngành chính" : "Chọn"}
+              </label>
+              <button type="button" onClick={() => removeIndustry(idx)} className="text-xs text-rose-600 border border-rose-200 rounded-lg px-2 py-1 hover:bg-rose-50 justify-self-start sm:justify-self-auto">Xóa</button>
+            </div>
+            <div className="mt-2">
+              <span className="block text-xs font-medium text-slate-600 mb-1">Chi tiết ngành nghề</span>
+              <textarea
+                value={it.detail}
+                onChange={(e) => setDetail(idx, e.target.value)}
+                placeholder={`Nhập nội dung hoạt động cụ thể của ngành ${it.code || ""}...`}
+                rows={2}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-4 bg-slate-50/60">
+        <IndustryField label="Thêm ngành nghề (mã cấp 4)" value={picker} onChange={addIndustry} />
+      </div>
+    </div>
+  );
+}
+
 function Toast({ message, onClose }) {
   React.useEffect(() => {
     const t = setTimeout(onClose, 3000);
@@ -484,7 +564,7 @@ function LoginScreen({ onLogin }) {
 // NHÂN VIÊN — PHÂN HỆ 1: THÔNG TIN KHÁCH HÀNG
 // ---------------------------------------------------------------------------
 function CustomerFormCard({ onSubmit }) {
-  const [form, setForm] = useState({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", referrer: "" });
+  const [form, setForm] = useState({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industries: [], referrer: "" });
   const [photoFile, setPhotoFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -504,7 +584,7 @@ function CustomerFormCard({ onSubmit }) {
     setSaving(true);
     await onSubmit({ ...form, photoFile });
     setSaving(false);
-    setForm({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", referrer: "" });
+    setForm({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industries: [], referrer: "" });
     setPhotoFile(null);
     setPreview(null);
   };
@@ -518,7 +598,9 @@ function CustomerFormCard({ onSubmit }) {
         <TextField label="Số điện thoại *" value={form.phone} onChange={set("phone")} placeholder="09xxxxxxxx" />
         <TextField label="Địa chỉ *" value={form.address} onChange={set("address")} placeholder="Số nhà, đường..." />
         <TextField label="Phường" value={form.ward} onChange={set("ward")} placeholder="Phường..." />
-        <IndustryField label="Ngành nghề kinh doanh" value={form.industry} onChange={(v) => setForm((f) => ({ ...f, industry: v }))} className="sm:col-span-2" />
+        <div className="sm:col-span-2">
+          <IndustryListEditor industries={form.industries} onChange={(list) => setForm((f) => ({ ...f, industries: list }))} />
+        </div>
         <TextField label="Người giới thiệu" value={form.referrer} onChange={set("referrer")} placeholder="Tên người giới thiệu khách hàng này (nếu có)" className="sm:col-span-2" />
       </div>
       <div className="mb-4">
@@ -737,8 +819,7 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
     xaPhuong2: order.hqWard || customer?.ward || "",
     tinhTp2: order.hqProvince || "Hà Tĩnh",
     vonDieuLe: order.capital ?? "",
-    nganhNghe: order.industryName || customer?.industry || "",
-    chiTietNganh: order.industryDetail || "",
+    industries: order.industries?.length ? order.industries : (customer?.industries || []),
   });
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -746,25 +827,25 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
 
   const vonBangChu = form.vonDieuLe ? soThanhChuTien(form.vonDieuLe) : "";
 
-  const parseIndustry = (val) => {
-    const m = (val || "").trim().match(/^(\d{3,5})\s*-\s*(.+)$/);
-    if (m) return { code: m[1], name: m[2].trim() };
-    return { code: "", name: (val || "").trim() };
-  };
-
   const submit = async () => {
     if (!form.hoTen || !form.tenCongTy || !form.vonDieuLe) {
       setError("Vui lòng điền đủ Họ tên, Tên công ty và Vốn điều lệ.");
+      return;
+    }
+    if (form.industries.length === 0) {
+      setError("Vui lòng thêm ít nhất 1 ngành nghề kinh doanh.");
       return;
     }
     setError("");
     setGenerating(true);
     try {
       const now = new Date();
-      const { code: maNganh, name: tenNganhGoc } = parseIndustry(form.nganhNghe);
-      const tenNganhHienThi = form.chiTietNganh.trim()
-        ? `${tenNganhGoc}\nChi tiết: ${form.chiTietNganh.trim()}`
-        : tenNganhGoc;
+      const nganhList = form.industries.map((ind, i) => ({
+        stt: String(i + 1),
+        ten: ind.detail.trim() ? `${ind.name}\nChi tiết: ${ind.detail.trim()}` : ind.name,
+        ma: ind.code,
+        chinh: ind.isPrimary ? "X" : "",
+      }));
       const data = {
         ho_ten: form.hoTen.toUpperCase(),
         ngay_sinh: isoToDDMMYYYY(form.ngaySinh),
@@ -785,16 +866,14 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
         thang_lap: String(now.getMonth() + 1).padStart(2, "0"),
         nam_lap: String(now.getFullYear()),
         tinh_lap: form.tinhTp2 || "Hà Tĩnh",
-        ten_nganh: tenNganhHienThi,
-        ma_nganh: maNganh,
-        nganh_chinh: "X",
+        nganh_list: nganhList,
       };
       await generateBusinessRegistrationDoc(data, `GiayDeNghiDKDN_${order.orderCode}.docx`);
       await onSave({
         companyName: form.tenCongTy, capital: Number(form.vonDieuLe) || null,
         ownerDob: form.ngaySinh || null, ownerGender: form.gioiTinh, ownerEmail: form.email,
         ownerProvince: form.tinhTp1, hqAddress: form.diaChi2, hqWard: form.xaPhuong2, hqProvince: form.tinhTp2,
-        industryName: form.nganhNghe, industryDetail: form.chiTietNganh,
+        industries: form.industries,
       });
       onClose();
     } catch (err) {
@@ -840,9 +919,8 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
         </div>
 
         <p className="text-xs font-semibold text-slate-600 mb-2">Ngành, nghề kinh doanh</p>
-        <div className="grid sm:grid-cols-2 gap-3 mb-4">
-          <IndustryField label="Ngành nghề kinh doanh (mã cấp 4)" value={form.nganhNghe} onChange={(v) => setForm((f) => ({ ...f, nganhNghe: v }))} className="sm:col-span-2" />
-          <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.chiTietNganh} onChange={set("chiTietNganh")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
+        <div className="mb-4">
+          <IndustryListEditor industries={form.industries} onChange={(list) => setForm((f) => ({ ...f, industries: list }))} />
         </div>
 
         {error && <p className="text-xs text-rose-600 mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
@@ -872,8 +950,7 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
     diaChiTruSo: order.hqAddress || customer?.address || "",
     phuong: order.hqWard || customer?.ward || "",
     tinhTp: order.hqProvince || "Hà Tĩnh",
-    nganhNghe: order.industryName || customer?.industry || "",
-    chiTietNganh: order.industryDetail || "",
+    industries: order.industries?.length ? order.industries : (customer?.industries || []),
     vonKinhDoanh: order.capital ?? "",
     diaChiCaNhan: customer?.address || "",
     phuongCaNhan: customer?.ward || "",
@@ -891,22 +968,25 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
 
   const vonBangChu = form.vonKinhDoanh ? soThanhChuTien(form.vonKinhDoanh) : "";
 
-  const parseIndustry = (val) => {
-    const m = (val || "").trim().match(/^(\d{3,5})\s*-\s*(.+)$/);
-    if (m) return { code: m[1], name: m[2].trim() };
-    return { code: "", name: (val || "").trim() };
-  };
-
   const submit = async () => {
     if (!form.hoTen || !form.tenHoKd || !form.vonKinhDoanh) {
       setError("Vui lòng điền đủ Họ tên, Tên hộ kinh doanh và Vốn kinh doanh.");
+      return;
+    }
+    if (form.industries.length === 0) {
+      setError("Vui lòng thêm ít nhất 1 ngành nghề kinh doanh.");
       return;
     }
     setError("");
     setGenerating(true);
     try {
       const now = new Date();
-      const { code: maNganh, name: tenNganh } = parseIndustry(form.nganhNghe);
+      const nganhList = form.industries.map((ind, i) => ({
+        stt: String(i + 1),
+        ten: ind.detail.trim() ? `${ind.name}\nChi tiết: ${ind.detail.trim()}` : ind.name,
+        ma: ind.code,
+        chinh: ind.isPrimary ? "X" : "",
+      }));
       const data = {
         ngay_lap: String(now.getDate()).padStart(2, "0"),
         thang_lap: String(now.getMonth() + 1).padStart(2, "0"),
@@ -922,8 +1002,7 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
         dien_thoai: form.dienThoai,
         ten_ho_kd: form.tenHoKd.toUpperCase(),
         dia_chi_tru_so: form.diaChiTruSo,
-        ten_nganh: form.chiTietNganh.trim() ? `${tenNganh}\nChi tiết: ${form.chiTietNganh.trim()}` : tenNganh,
-        ma_nganh: maNganh,
+        nganh_list: nganhList,
         von_kinh_doanh: Number(form.vonKinhDoanh).toLocaleString("vi-VN"),
         von_bang_chu: vonBangChu,
         dia_chi_ca_nhan: form.diaChiCaNhan,
@@ -942,7 +1021,7 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
         companyName: form.tenHoKd, capital: Number(form.vonKinhDoanh) || null,
         ownerDob: form.ngaySinh || null, ownerGender: form.gioiTinh, ownerEmail: order.ownerEmail,
         ownerProvince: form.tinhTpCaNhan, hqAddress: form.diaChiTruSo, hqWard: form.phuong, hqProvince: form.tinhTp,
-        industryName: form.nganhNghe, industryDetail: form.chiTietNganh,
+        industries: form.industries,
       });
       onClose();
     } catch (err) {
@@ -987,9 +1066,8 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
         </div>
 
         <p className="text-xs font-semibold text-slate-600 mb-2">Ngành, nghề kinh doanh</p>
-        <div className="grid sm:grid-cols-2 gap-3 mb-4">
-          <IndustryField label="Ngành nghề kinh doanh (mã cấp 4)" value={form.nganhNghe} onChange={(v) => setForm((f) => ({ ...f, nganhNghe: v }))} className="sm:col-span-2" />
-          <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.chiTietNganh} onChange={set("chiTietNganh")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
+        <div className="mb-4">
+          <IndustryListEditor industries={form.industries} onChange={(list) => setForm((f) => ({ ...f, industries: list }))} />
         </div>
 
         <p className="text-xs font-semibold text-slate-600 mb-2">Người nhận uỷ quyền (nhân sự công ty nộp hồ sơ)</p>
@@ -1781,7 +1859,7 @@ export default function App() {
       }
       const { error } = await supabase.from("customers").insert({
         name: form.name || null, cccd: form.cccd || null, phone: form.phone, address: form.address,
-        ward: form.ward || null, industry: form.industry || null, referrer: form.referrer || null,
+        ward: form.ward || null, industries: form.industries || [], referrer: form.referrer || null,
         vnid_photo_url: vnidUrl, employee_id: currentUser.id,
       });
       if (error) throw error;
@@ -1876,7 +1954,7 @@ export default function App() {
       company_name: fields.companyName, capital: fields.capital, owner_dob: fields.ownerDob,
       owner_gender: fields.ownerGender, owner_email: fields.ownerEmail, owner_province: fields.ownerProvince,
       hq_address: fields.hqAddress, hq_ward: fields.hqWard, hq_province: fields.hqProvince,
-      industry_name: fields.industryName || null, industry_detail: fields.industryDetail || null,
+      industries: fields.industries || [],
     }).eq("id", orderId);
     if (error) { setToast("Lưu file thành công nhưng lỗi khi lưu thông tin: " + error.message); return; }
     await refreshAll();
