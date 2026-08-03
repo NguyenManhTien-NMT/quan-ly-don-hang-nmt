@@ -115,7 +115,7 @@ const CHART_TOOLTIP_STYLE = {
 function customerFromRow(r) {
   return {
     id: r.id, name: r.name, cccd: r.cccd, phone: r.phone, address: r.address, ward: r.ward,
-    industry: r.industry, industryDetail: r.industry_detail || "", referrer: r.referrer, vnidPhoto: r.vnid_photo_url,
+    industry: r.industry, referrer: r.referrer, vnidPhoto: r.vnid_photo_url,
     employeeId: r.employee_id, createdAt: r.created_at,
   };
 }
@@ -484,7 +484,7 @@ function LoginScreen({ onLogin }) {
 // NHÂN VIÊN — PHÂN HỆ 1: THÔNG TIN KHÁCH HÀNG
 // ---------------------------------------------------------------------------
 function CustomerFormCard({ onSubmit }) {
-  const [form, setForm] = useState({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", industryDetail: "", referrer: "" });
+  const [form, setForm] = useState({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", referrer: "" });
   const [photoFile, setPhotoFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -504,7 +504,7 @@ function CustomerFormCard({ onSubmit }) {
     setSaving(true);
     await onSubmit({ ...form, photoFile });
     setSaving(false);
-    setForm({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", industryDetail: "", referrer: "" });
+    setForm({ name: "", cccd: "", phone: "", address: "", ward: WARDS[0], industry: "", referrer: "" });
     setPhotoFile(null);
     setPreview(null);
   };
@@ -519,7 +519,6 @@ function CustomerFormCard({ onSubmit }) {
         <TextField label="Địa chỉ *" value={form.address} onChange={set("address")} placeholder="Số nhà, đường..." />
         <TextField label="Phường" value={form.ward} onChange={set("ward")} placeholder="Phường..." />
         <IndustryField label="Ngành nghề kinh doanh" value={form.industry} onChange={(v) => setForm((f) => ({ ...f, industry: v }))} className="sm:col-span-2" />
-        <TextField label="Chi tiết ngành nghề (nhập tay, không bắt buộc)" value={form.industryDetail} onChange={set("industryDetail")} placeholder="VD: Bán lẻ thịt bò" className="sm:col-span-2" />
         <TextField label="Người giới thiệu" value={form.referrer} onChange={set("referrer")} placeholder="Tên người giới thiệu khách hàng này (nếu có)" className="sm:col-span-2" />
       </div>
       <div className="mb-4">
@@ -739,7 +738,7 @@ function BusinessRegModal({ order, customer, onSave, onClose }) {
     tinhTp2: order.hqProvince || "Hà Tĩnh",
     vonDieuLe: order.capital ?? "",
     nganhNghe: order.industryName || customer?.industry || "",
-    chiTietNganh: order.industryDetail || customer?.industryDetail || "",
+    chiTietNganh: order.industryDetail || "",
   });
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -874,7 +873,7 @@ function HouseholdRegModal({ order, customer, currentUser, onSave, onClose }) {
     phuong: order.hqWard || customer?.ward || "",
     tinhTp: order.hqProvince || "Hà Tĩnh",
     nganhNghe: order.industryName || customer?.industry || "",
-    chiTietNganh: order.industryDetail || customer?.industryDetail || "",
+    chiTietNganh: order.industryDetail || "",
     vonKinhDoanh: order.capital ?? "",
     diaChiCaNhan: customer?.address || "",
     phuongCaNhan: customer?.ward || "",
@@ -1782,7 +1781,7 @@ export default function App() {
       }
       const { error } = await supabase.from("customers").insert({
         name: form.name || null, cccd: form.cccd || null, phone: form.phone, address: form.address,
-        ward: form.ward || null, industry: form.industry || null, industry_detail: form.industryDetail || null, referrer: form.referrer || null,
+        ward: form.ward || null, industry: form.industry || null, referrer: form.referrer || null,
         vnid_photo_url: vnidUrl, employee_id: currentUser.id,
       });
       if (error) throw error;
