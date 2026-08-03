@@ -355,8 +355,8 @@ function IndustryListEditor({ industries, onChange }) {
   };
 
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+    <div className="border border-slate-200 rounded-xl">
+      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 rounded-t-xl">
         <p className="text-sm font-semibold text-slate-800">Danh sách ngành nghề kinh doanh</p>
         <p className="text-xs text-slate-400">{industries.length} ngành nghề đã thêm</p>
       </div>
@@ -393,7 +393,7 @@ function IndustryListEditor({ industries, onChange }) {
         ))}
       </div>
 
-      <div className="p-4 bg-slate-50/60">
+      <div className="p-4 bg-slate-50/60 rounded-b-xl relative z-10">
         <IndustryField label="Thêm ngành nghề (mã cấp 4)" value={picker} onChange={addIndustry} />
       </div>
     </div>
