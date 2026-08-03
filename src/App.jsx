@@ -301,7 +301,7 @@ function IndustryField({ label, value, onChange, className = "" }) {
         className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
       />
       {open && suggestions.length > 0 && (
-        <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg max-h-64 overflow-y-auto">
+        <div className="relative z-20 mt-1 bg-white rounded-xl border border-slate-300 shadow-lg max-h-64 overflow-y-auto">
           {suggestions.map((item, i) => (
             <button
               type="button"
